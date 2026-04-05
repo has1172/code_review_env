@@ -268,6 +268,7 @@ def grade_task3(action: CodeReviewAction, snippet: dict) -> tuple:
 # ─────────────────────────────────────────────────────────────────
 class CodeReviewEnvironment(Environment):
     SUPPORTS_CONCURRENT_SESSIONS = True
+    _shared_snippet = SNIPPETS[0]  # Class-level default
 
     def __init__(self):
         self._state = CodeReviewState()
@@ -279,6 +280,7 @@ class CodeReviewEnvironment(Environment):
             random.seed(seed)
         index = random.randint(0, len(SNIPPETS) - 1)
         self._snippet = SNIPPETS[index]
+        CodeReviewEnvironment._shared_snippet = self._snippet 
         self._task_id = 1
 
         self._state = CodeReviewState(
