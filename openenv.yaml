@@ -1,0 +1,43 @@
+name: code_review_env
+version: "1.0.0"
+description: >
+  A real-world code review environment where an AI agent reviews
+  buggy Python code through three progressive tasks:
+  bug detection, bug classification, and bug fixing.
+author: your_huggingface_username
+tags:
+  - openenv
+  - code-review
+  - reinforcement-learning
+  - real-world
+
+environment:
+  class: CodeReviewEnvironment
+  module: server.environment
+  supports_concurrent_sessions: true
+
+tasks:
+  - id: 1
+    name: Bug Detection
+    difficulty: easy
+    description: Detect whether the code contains a bug.
+    max_score: 1.0
+
+  - id: 2
+    name: Bug Classification
+    difficulty: medium
+    description: Classify the type of bug (syntax/logic/security/performance).
+    max_score: 1.0
+
+  - id: 3
+    name: Bug Fix
+    difficulty: hard
+    description: Provide a corrected version of the buggy code.
+    max_score: 1.0
+
+endpoints:
+  - /tasks
+  - /grader
+  - /baseline
+
+max_score_per_episode: 3.0
