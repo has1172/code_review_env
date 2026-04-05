@@ -6,28 +6,49 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
-from openenv.core.env_server import create_fastapi_app
 from environment import CodeReviewEnvironment
 from environment import SNIPPETS, grade_task1, grade_task2, grade_task3
-from models import CodeReviewAction, CodeReviewObservation
+from models import CodeReviewAction
 import random
 
 # ─────────────────────────────────────────────────────────────────
-# BASE APP
+# CREATE APP FROM SCRATCH — full control over all endpoints
 # ─────────────────────────────────────────────────────────────────
-app = create_fastapi_app(CodeReviewEnvironment, CodeReviewAction, CodeReviewObservation)
+app = FastAPI(
+    title="Code Review RL Environment",
+    description="A real-world code review environment for RL agents.",
+    version="1.0.0",
+)
 
-# Global environment instance
+# Single global environment instance — persists across requests
 _env = CodeReviewEnvironment()
+_env.reset()  # Initialize with a snippet immediately
+
 
 # ─────────────────────────────────────────────────────────────────
-# OVERRIDE /reset
+# REQUEST MODELS
 # ─────────────────────────────────────────────────────────────────
 class ResetRequest(BaseModel):
     seed: Optional[int] = None
     episode_id: Optional[str] = None
 
-@app.post("/reset", tags=["Environment Control"])
+class StepRequest(BaseModel):
+    action: CodeReviewAction
+    timeout_s: Optional[float] = 30
+
+
+# ─────────────────────────────────────────────────────────────────
+# /health
+# ─────────────────────────────────────────────────────────────────
+@app.get("/health")
+def health():
+    return JSONResponse({"status": "healthy"})
+
+
+# ─────────────────────────────────────────────────────────────────
+# /reset
+# ─────────────────────────────────────────────────────────────────
+@app.post("/reset")
 def reset(request: ResetRequest = ResetRequest()):
     global _env
     _env = CodeReviewEnvironment()
@@ -41,14 +62,11 @@ def reset(request: ResetRequest = ResetRequest()):
         "done": False,
     })
 
-# ─────────────────────────────────────────────────────────────────
-# OVERRIDE /step
-# ─────────────────────────────────────────────────────────────────
-class StepRequest(BaseModel):
-    action: CodeReviewAction
-    timeout_s: Optional[float] = 30
 
-@app.post("/step", tags=["Environment Control"])
+# ─────────────────────────────────────────────────────────────────
+# /step
+# ─────────────────────────────────────────────────────────────────
+@app.post("/step")
 def step(request: StepRequest):
     global _env
     obs = _env.step(request.action)
@@ -57,6 +75,25 @@ def step(request: StepRequest):
         "reward": obs.reward,
         "done": obs.done,
     })
+
+
+# ─────────────────────────────────────────────────────────────────
+# /state
+# ─────────────────────────────────────────────────────────────────
+@app.get("/state")
+def state():
+    return JSONResponse(_env.state.model_dump())
+
+
+# ─────────────────────────────────────────────────────────────────
+# /schema
+# ─────────────────────────────────────────────────────────────────
+@app.get("/schema")
+def schema():
+    return JSONResponse({
+        "action": CodeReviewAction.model_json_schema(),
+    })
+
 
 # ─────────────────────────────────────────────────────────────────
 # /tasks
@@ -80,7 +117,7 @@ def get_tasks():
                 "task_id": 2,
                 "name": "Bug Classification",
                 "difficulty": "medium",
-                "description": "Classify the bug. Choose from: syntax, logic, security, performance. Bonus: bug_line.",
+                "description": "Classify the bug. Choose: syntax, logic, security, performance. Bonus: bug_line.",
                 "action_schema": {
                     "task_id": "int (must be 2)",
                     "bug_type": "str — one of: syntax, logic, security, performance",
@@ -98,12 +135,13 @@ def get_tasks():
                     "fixed_code": "str — the complete corrected Python code",
                     "explanation": "str (optional) — why this fix works",
                 },
-                "scoring": "1.0 = perfect, 0.8 = very close, 0.6 = partial, 0.4 = mostly wrong, 0.3 = unchanged, 0.1 = invalid Python, 0.0 = no fix",
+                "scoring": "1.0=perfect, 0.8=close, 0.6=partial, 0.4=wrong, 0.3=unchanged, 0.1=invalid, 0.0=no fix",
             },
         ],
         "total_tasks": 3,
         "max_score_per_episode": 3.0,
     })
+
 
 # ─────────────────────────────────────────────────────────────────
 # /grader
@@ -120,7 +158,7 @@ def run_grader(action: CodeReviewAction):
     elif action.task_id == 3:
         score, feedback = grade_task3(action, snippet)
     else:
-        score, feedback = 0.0, "Invalid task_id. Must be 1, 2, or 3."
+        score, feedback = 0.0, "Invalid task_id."
 
     return JSONResponse({
         "task_id": action.task_id,
@@ -128,6 +166,7 @@ def run_grader(action: CodeReviewAction):
         "feedback": feedback,
         "score_range": "0.0 to 1.0",
     })
+
 
 # ─────────────────────────────────────────────────────────────────
 # /baseline
