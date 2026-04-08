@@ -142,7 +142,7 @@ def get_tasks():
                     "task_id": "int (must be 1)",
                     "bug_detected": "bool — True if bug exists, False if not",
                 },
-                "scoring": "1.0 = correct, 0.0 = incorrect",
+                "scoring": "0.99 = correct, 0.01 = incorrect",
             },
             {
                 "task_id": 2,
@@ -154,7 +154,7 @@ def get_tasks():
                     "bug_type": "str — one of: syntax, logic, security, performance",
                     "bug_line": "int (optional) — line number where the bug occurs",
                 },
-                "scoring": "0.7 for correct type + 0.3 bonus for correct line",
+                "scoring": "0.65 for correct type + 0.25 bonus for correct line",
             },
             {
                 "task_id": 3,
@@ -166,11 +166,11 @@ def get_tasks():
                     "fixed_code": "str — the complete corrected Python code",
                     "explanation": "str (optional) — why this fix works",
                 },
-                "scoring": "1.0=perfect, 0.8=close, 0.6=partial, 0.4=wrong, 0.3=unchanged, 0.1=invalid, 0.0=no fix",
+                "scoring": "0.99=perfect, 0.79=close, 0.55=partial, 0.35=wrong, 0.25=unchanged, 0.10=invalid, 0.01=no fix",
             },
         ],
         "total_tasks": 3,
-        "max_score_per_episode": 3.0,
+        "max_score_per_episode": 2.97,
     })
 
 
@@ -195,7 +195,7 @@ def run_grader(action: CodeReviewAction):
         "task_id": action.task_id,
         "score": score,
         "feedback": feedback,
-        "score_range": "0.0 to 1.0",
+        "score_range": "0.01 to 0.99",
     })
 
 
@@ -231,8 +231,8 @@ def run_baseline():
             "task_3_bug_fix": {"score": score3, "feedback": feedback3},
         },
         "total_score": total,
-        "max_score": 3.0,
-        "percentage": f"{(total / 3.0) * 100:.1f}%",
+        "max_score": 2.97,
+        "percentage": f"{(total / 2.97) * 100:.1f}%",
     })
 
 
