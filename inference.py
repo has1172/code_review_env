@@ -30,7 +30,7 @@ MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.3-70B-Instruct")
 MAX_STEPS = 3
 TEMPERATURE = 0.0
 MAX_TOKENS = 500
-DEFAULT_URL = "http://localhost:8000"
+DEFAULT_URL = "http://localhost:7860"
 
 SYSTEM_PROMPT = """You are an expert Python code reviewer.
 You will be given a code snippet and a task to perform.
@@ -87,10 +87,52 @@ def check_health(base_url: str) -> bool:
         return False
 
 
+def normalize_url(url: str) -> str:
+    return url.rstrip("/")
+
+
+def candidate_urls(cli_url: str) -> list[str]:
+    candidates: list[str] = []
+
+    def add(url: str | None) -> None:
+        if not url:
+            return
+        normalized = normalize_url(url)
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+
+    add(cli_url)
+    add(os.getenv("ENV_URL"))
+    add(os.getenv("OPENENV_URL"))
+    add(os.getenv("OPENENV_BASE_URL"))
+    add(os.getenv("SPACE_URL"))
+    add("http://localhost:7860")
+    add("http://127.0.0.1:7860")
+    add("http://localhost:8000")
+    add("http://127.0.0.1:8000")
+    return candidates
+
+
+def resolve_server_url(cli_url: str) -> str | None:
+    for url in candidate_urls(cli_url):
+        if check_health(url):
+            return url
+    return None
+
+
 # ─────────────────────────────────────────────────────────────────
 # LLM AGENT
 # ─────────────────────────────────────────────────────────────────
-def call_llm(client: OpenAI, code_snippet: str, task_id: int, task_description: str) -> dict:
+def call_llm(client: OpenAI | None, code_snippet: str, task_id: int, task_description: str) -> dict:
+    fallbacks = {
+        1: {"task_id": 1, "bug_detected": True},
+        2: {"task_id": 2, "bug_type": "logic", "bug_line": 1},
+        3: {"task_id": 3, "fixed_code": code_snippet, "explanation": "No fix found"},
+    }
+
+    if client is None:
+        return fallbacks[task_id]
+
     user_prompt = f"""Code to review:
 ```python
 {code_snippet}
@@ -117,20 +159,10 @@ Respond with ONLY the JSON action object."""
 
     except json.JSONDecodeError:
         print(f"[WARN] JSON parse failed for task {task_id}, using fallback")
-        fallbacks = {
-            1: {"task_id": 1, "bug_detected": True},
-            2: {"task_id": 2, "bug_type": "logic", "bug_line": 1},
-            3: {"task_id": 3, "fixed_code": code_snippet, "explanation": "No fix found"},
-        }
         return fallbacks[task_id]
 
     except Exception as exc:
         print(f"[WARN] LLM call failed ({exc}), using fallback")
-        fallbacks = {
-            1: {"task_id": 1, "bug_detected": True},
-            2: {"task_id": 2, "bug_type": "logic", "bug_line": 1},
-            3: {"task_id": 3, "fixed_code": code_snippet, "explanation": "No fix found"},
-        }
         return fallbacks[task_id]
 
 
@@ -229,7 +261,7 @@ def run_episode(base_url: str, client: OpenAI, episode_num: int) -> dict:
 # ─────────────────────────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────────────────────────
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description="Inference script for Code Review RL Environment"
     )
@@ -237,31 +269,36 @@ def main():
     parser.add_argument("--episodes", type=int, default=3, help="Number of episodes to run")
     args = parser.parse_args()
 
-    if not API_KEY:
-        raise ValueError(
-            "HF_TOKEN environment variable not set!\n"
-            "Set it with:\n"
-            "  Windows: set HF_TOKEN=your_token_here\n"
-            "  Mac/Linux: export HF_TOKEN=your_token_here"
-        )
+    run_url = resolve_server_url(args.url)
 
     print(json.dumps({
         "type": "[START]",
         "script": "Code Review Environment — Inference Script",
         "server_url": args.url,
+        "resolved_server_url": run_url,
         "model": MODEL_NAME,
         "api_base_url": API_BASE_URL,
         "episodes": args.episodes,
     }))
 
-    if not check_health(args.url):
-        raise ConnectionError(f"Cannot reach server at {args.url}")
+    if run_url is None:
+        print(json.dumps({
+            "type": "[END]",
+            "error": "Cannot reach environment server",
+            "tried_urls": candidate_urls(args.url),
+        }))
+        return 1
 
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY) if API_KEY else None
+    if not API_KEY:
+        print(json.dumps({
+            "type": "[STEP]",
+            "warning": "HF_TOKEN/API_KEY not set, using fallback actions instead of LLM calls",
+        }))
 
     all_scores = []
     for i in range(1, args.episodes + 1):
-        scores = run_episode(args.url, client, i)
+        scores = run_episode(run_url, client, i)
         all_scores.append(scores)
 
     avg_t1 = sum(s.get("task_1", 0) for s in all_scores) / len(all_scores)
@@ -289,7 +326,12 @@ def main():
     with open("inference_results.json", "w") as f:
         json.dump(results, f, indent=2)
     print(json.dumps({"type": "[END]", "message": "Results saved to inference_results.json"}))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(json.dumps({"type": "[END]", "error": str(exc)}))
+        raise SystemExit(1)
