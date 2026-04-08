@@ -6,9 +6,17 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
-from environment import CodeReviewEnvironment
-from environment import SNIPPETS, grade_task1, grade_task2, grade_task3
-from models import CodeReviewAction
+import uvicorn
+
+try:
+    from .environment import CodeReviewEnvironment
+    from .environment import SNIPPETS, grade_task1, grade_task2, grade_task3
+    from .models import CodeReviewAction
+except ImportError:
+    # Fallback for direct script execution from the server directory.
+    from environment import CodeReviewEnvironment
+    from environment import SNIPPETS, grade_task1, grade_task2, grade_task3
+    from models import CodeReviewAction
 import random
 
 # ─────────────────────────────────────────────────────────────────
@@ -224,3 +232,13 @@ def run_baseline():
         "max_score": 3.0,
         "percentage": f"{(total / 3.0) * 100:.1f}%",
     })
+
+
+def main() -> None:
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "7860"))
+    uvicorn.run("server.app:app", host=host, port=port)
+
+
+if __name__ == "__main__":
+    main()

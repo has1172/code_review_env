@@ -18,6 +18,9 @@ dependencies = [
 [project.urls]
 Homepage = "https://huggingface.co/spaces/your_username/code-review-env"
 
+[project.scripts]
+server = "server.app:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
-```
+
