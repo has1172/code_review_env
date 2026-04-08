@@ -302,7 +302,7 @@ class CodeReviewEnvironment(Environment):
             tasks_completed=[],
             task_scores={},
             total_score=0.0,
-            max_possible_score=3.0,
+            max_possible_score=2.97,
         )
 
         return CodeReviewObservation(
@@ -347,8 +347,8 @@ class CodeReviewEnvironment(Environment):
             self._state.current_task_id = task_id
             next_desc = (
                 f"Episode complete! "
-                f"Total score: {self._state.total_score:.2f} / 3.0 "
-                f"({(self._state.total_score / 3.0) * 100:.0f}%)"
+                f"Total score: {self._state.total_score:.2f} / 2.97 "
+                f"({(self._state.total_score / 2.97) * 100:.0f}%)"
             )
 
         shaped_reward = score

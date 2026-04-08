@@ -250,8 +250,8 @@ def run_episode(base_url: str, client: OpenAI | None, episode_num: int) -> dict:
 
     total = sum(episode_scores.values())
     episode_scores["total"] = round(total, 3)
-    episode_scores["episode_score"] = strict_task_score(total / 3.0)
-    episode_scores["percentage"] = f"{(total / 3.0) * 100:.1f}%"
+    episode_scores["episode_score"] = strict_task_score(total / 2.97)
+    episode_scores["percentage"] = f"{(total / 2.97) * 100:.1f}%"
 
     # [END] log — required format
     emit_block(
@@ -317,8 +317,8 @@ def main() -> int:
             "task_2_bug_classification": strict_task_score(avg_t2),
             "task_3_bug_fix": strict_task_score(avg_t3),
             "total": round(avg_total, 3),
-            "max_possible": 3.0,
-            "percentage": f"{(avg_total / 3.0) * 100:.1f}%",
+            "max_possible": 2.97,
+            "percentage": f"{(avg_total / 2.97) * 100:.1f}%",
         },
     }
 
