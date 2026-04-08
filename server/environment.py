@@ -302,13 +302,13 @@ class CodeReviewEnvironment(Environment):
 
         return CodeReviewObservation(
             done=False,
-            reward=0.0,
+            reward=MIN_TASK_SCORE,
             code_snippet=self._snippet["code"],
             task_id=1,
             task_description=TASK_DESCRIPTIONS[1],
             feedback="New episode started. Carefully read the code snippet below.",
-            score=0.0,
-            cumulative_score=0.0,
+            score=MIN_TASK_SCORE,
+            cumulative_score=MIN_TASK_SCORE,
             hint=self._snippet["hint"],
         )
 
@@ -347,8 +347,9 @@ class CodeReviewEnvironment(Environment):
             )
 
         shaped_reward = score
-        if score > 0 and not done:
+        if score > MIN_TASK_SCORE and not done:
             shaped_reward += 0.05
+        shaped_reward = normalize_task_score(shaped_reward)
 
         return CodeReviewObservation(
             done=done,
@@ -357,8 +358,8 @@ class CodeReviewEnvironment(Environment):
             task_id=task_id,
             task_description=next_desc,
             feedback=feedback,
-            score=score,
-            cumulative_score=round(self._state.total_score, 3),
+            score=normalize_task_score(score),
+            cumulative_score=normalize_task_score(round(self._state.total_score, 3)),
             hint=self._snippet["hint"] if not done else "Review complete.",
         )
 

@@ -11,11 +11,13 @@ import uvicorn
 try:
     from .environment import CodeReviewEnvironment
     from .environment import SNIPPETS, grade_task1, grade_task2, grade_task3
+    from .environment import MIN_TASK_SCORE, normalize_task_score
     from .models import CodeReviewAction
 except ImportError:
     # Fallback for direct script execution from the server directory.
     from environment import CodeReviewEnvironment
     from environment import SNIPPETS, grade_task1, grade_task2, grade_task3
+    from environment import MIN_TASK_SCORE, normalize_task_score
     from models import CodeReviewAction
 import random
 
@@ -87,7 +89,7 @@ def reset(request: ResetRequest = ResetRequest()):
     )
     return JSONResponse({
         "observation": obs.model_dump(),
-        "reward": 0.0,
+        "reward": MIN_TASK_SCORE,
         "done": False,
     })
 
@@ -187,7 +189,7 @@ def run_grader(action: CodeReviewAction):
     elif action.task_id == 3:
         score, feedback = grade_task3(action, snippet)
     else:
-        score, feedback = 0.0, "Invalid task_id."
+        score, feedback = normalize_task_score(0.0), "Invalid task_id."
 
     return JSONResponse({
         "task_id": action.task_id,
