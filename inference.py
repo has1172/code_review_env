@@ -218,7 +218,7 @@ def run_episode(base_url: str, client: OpenAI | None, episode_num: int) -> dict:
             result = step_episode(base_url, action)
             result_obs = result.get("observation", result)
 
-            score = strict_task_score(result_obs.get("score", 0.0))
+            score = strict_task_score(result_obs.get("score", MIN_TASK_SCORE))
             feedback = result_obs.get("feedback", "")
             done = result.get("done", False)
 
@@ -230,7 +230,7 @@ def run_episode(base_url: str, client: OpenAI | None, episode_num: int) -> dict:
                 episode=episode_num,
                 task_id=task_id,
                 score=score,
-                reward=result.get("reward", 0.0),
+                reward=strict_task_score(result.get("reward", MIN_TASK_SCORE)),
                 done=done,
             )
 
@@ -243,7 +243,7 @@ def run_episode(base_url: str, client: OpenAI | None, episode_num: int) -> dict:
                 episode=episode_num,
                 task_id=task_id,
                 score=MIN_TASK_SCORE,
-                reward=0.0,
+                reward=MIN_TASK_SCORE,
                 done=False,
                 error=str(e),
             )
@@ -257,9 +257,9 @@ def run_episode(base_url: str, client: OpenAI | None, episode_num: int) -> dict:
     emit_block(
         "[END]",
         episode=episode_num,
-        task_1=episode_scores.get("task_1", 0.0),
-        task_2=episode_scores.get("task_2", 0.0),
-        task_3=episode_scores.get("task_3", 0.0),
+        task_1=episode_scores.get("task_1", MIN_TASK_SCORE),
+        task_2=episode_scores.get("task_2", MIN_TASK_SCORE),
+        task_3=episode_scores.get("task_3", MIN_TASK_SCORE),
         score=episode_scores["episode_score"],
         steps=3,
     )
@@ -302,10 +302,10 @@ def main() -> int:
         scores = run_episode(run_url, client, i)
         all_scores.append(scores)
 
-    avg_t1 = sum(s.get("task_1", 0) for s in all_scores) / len(all_scores)
-    avg_t2 = sum(s.get("task_2", 0) for s in all_scores) / len(all_scores)
-    avg_t3 = sum(s.get("task_3", 0) for s in all_scores) / len(all_scores)
-    avg_total = sum(s.get("total", 0) for s in all_scores) / len(all_scores)
+    avg_t1 = sum(s.get("task_1", MIN_TASK_SCORE) for s in all_scores) / len(all_scores)
+    avg_t2 = sum(s.get("task_2", MIN_TASK_SCORE) for s in all_scores) / len(all_scores)
+    avg_t3 = sum(s.get("task_3", MIN_TASK_SCORE) for s in all_scores) / len(all_scores)
+    avg_total = sum(s.get("total", MIN_TASK_SCORE) for s in all_scores) / len(all_scores)
     avg_episode_score = strict_task_score(avg_total / 3.0)
 
     results = {
@@ -313,9 +313,9 @@ def main() -> int:
         "api_base_url": API_BASE_URL,
         "episodes_run": args.episodes,
         "average_scores": {
-            "task_1_bug_detection": round(avg_t1, 3),
-            "task_2_bug_classification": round(avg_t2, 3),
-            "task_3_bug_fix": round(avg_t3, 3),
+            "task_1_bug_detection": strict_task_score(avg_t1),
+            "task_2_bug_classification": strict_task_score(avg_t2),
+            "task_3_bug_fix": strict_task_score(avg_t3),
             "total": round(avg_total, 3),
             "max_possible": 3.0,
             "percentage": f"{(avg_total / 3.0) * 100:.1f}%",
