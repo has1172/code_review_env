@@ -120,6 +120,18 @@ def resolve_server_url(cli_url: str) -> str | None:
     return None
 
 
+def emit_block(tag: str, **fields: object) -> None:
+    parts: list[str] = [tag]
+    for key, value in fields.items():
+        if isinstance(value, (dict, list)):
+            rendered = json.dumps(value, ensure_ascii=True)
+        else:
+            rendered = str(value)
+        rendered = rendered.replace("\n", "\\n")
+        parts.append(f"{key}={rendered}")
+    print(" ".join(parts), flush=True)
+
+
 # ─────────────────────────────────────────────────────────────────
 # LLM AGENT
 # ─────────────────────────────────────────────────────────────────
@@ -169,7 +181,7 @@ Respond with ONLY the JSON action object."""
 # ─────────────────────────────────────────────────────────────────
 # RUN ONE EPISODE
 # ─────────────────────────────────────────────────────────────────
-def run_episode(base_url: str, client: OpenAI, episode_num: int) -> dict:
+def run_episode(base_url: str, client: OpenAI | None, episode_num: int) -> dict:
 
     # Reset environment
     obs_response = reset_episode(base_url)
@@ -178,14 +190,13 @@ def run_episode(base_url: str, client: OpenAI, episode_num: int) -> dict:
     hint = observation.get("hint", "")
 
     # [START] log — required format
-    print(json.dumps({
-        "type": "[START]",
-        "episode": episode_num,
-        "code_snippet": code_snippet,
-        "hint": hint,
-        "model": MODEL_NAME,
-        "environment_url": base_url,
-    }))
+    emit_block(
+        "[START]",
+        episode=episode_num,
+        model=MODEL_NAME,
+        environment_url=base_url,
+        hint=hint,
+    )
 
     episode_scores = {}
 
@@ -209,51 +220,46 @@ def run_episode(base_url: str, client: OpenAI, episode_num: int) -> dict:
             episode_scores[f"task_{task_id}"] = score
 
             # [STEP] log — required format
-            print(json.dumps({
-                "type": "[STEP]",
-                "episode": episode_num,
-                "task_id": task_id,
-                "action": action,
-                "score": score,
-                "feedback": feedback,
-                "cumulative_score": cumulative,
-                "done": done,
-                "reward": result.get("reward", 0.0),
-            }))
+            emit_block(
+                "[STEP]",
+                episode=episode_num,
+                task_id=task_id,
+                score=score,
+                reward=result.get("reward", 0.0),
+                done=done,
+                cumulative_score=cumulative,
+            )
 
         except Exception as e:
             print(f"[WARN] Error on task {task_id}: {e}")
             episode_scores[f"task_{task_id}"] = 0.0
 
-            print(json.dumps({
-                "type": "[STEP]",
-                "episode": episode_num,
-                "task_id": task_id,
-                "action": {},
-                "score": 0.0,
-                "feedback": f"Error: {str(e)}",
-                "cumulative_score": 0.0,
-                "done": False,
-                "reward": 0.0,
-            }))
+            emit_block(
+                "[STEP]",
+                episode=episode_num,
+                task_id=task_id,
+                score=0.0,
+                reward=0.0,
+                done=False,
+                error=str(e),
+            )
 
     total = sum(episode_scores.values())
     episode_scores["total"] = round(total, 3)
     episode_scores["percentage"] = f"{(total / 3.0) * 100:.1f}%"
 
     # [END] log — required format
-    print(json.dumps({
-        "type": "[END]",
-        "episode": episode_num,
-        "scores": {
-            "task_1": episode_scores.get("task_1", 0.0),
-            "task_2": episode_scores.get("task_2", 0.0),
-            "task_3": episode_scores.get("task_3", 0.0),
-            "total": episode_scores["total"],
-            "max_possible": 3.0,
-            "percentage": episode_scores["percentage"],
-        }
-    }))
+    emit_block(
+        "[END]",
+        episode=episode_num,
+        task_1=episode_scores.get("task_1", 0.0),
+        task_2=episode_scores.get("task_2", 0.0),
+        task_3=episode_scores.get("task_3", 0.0),
+        score=episode_scores["total"],
+        max_possible=3.0,
+        percentage=episode_scores["percentage"],
+        steps=3,
+    )
 
     return episode_scores
 
@@ -271,30 +277,22 @@ def main() -> int:
 
     run_url = resolve_server_url(args.url)
 
-    print(json.dumps({
-        "type": "[START]",
-        "script": "Code Review Environment — Inference Script",
-        "server_url": args.url,
-        "resolved_server_url": run_url,
-        "model": MODEL_NAME,
-        "api_base_url": API_BASE_URL,
-        "episodes": args.episodes,
-    }))
+    emit_block(
+        "[START]",
+        task="inference",
+        server_url=args.url,
+        resolved_server_url=run_url,
+        model=MODEL_NAME,
+        episodes=args.episodes,
+    )
 
     if run_url is None:
-        print(json.dumps({
-            "type": "[END]",
-            "error": "Cannot reach environment server",
-            "tried_urls": candidate_urls(args.url),
-        }))
+        emit_block("[END]", task="inference", error="Cannot reach environment server", tried_urls=candidate_urls(args.url))
         return 1
 
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY) if API_KEY else None
     if not API_KEY:
-        print(json.dumps({
-            "type": "[STEP]",
-            "warning": "HF_TOKEN/API_KEY not set, using fallback actions instead of LLM calls",
-        }))
+        emit_block("[STEP]", task="inference", step="config", warning="HF_TOKEN/API_KEY not set; using fallback actions")
 
     all_scores = []
     for i in range(1, args.episodes + 1):
@@ -321,11 +319,11 @@ def main() -> int:
     }
 
     # Final [END] summary log
-    print(json.dumps({"type": "[END]", "summary": results}))
+    emit_block("[END]", task="inference", score=round(avg_total, 3), steps=args.episodes, summary=results)
 
     with open("inference_results.json", "w") as f:
         json.dump(results, f, indent=2)
-    print(json.dumps({"type": "[END]", "message": "Results saved to inference_results.json"}))
+    emit_block("[END]", task="inference", message="Results saved to inference_results.json")
     return 0
 
 
@@ -333,5 +331,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:
-        print(json.dumps({"type": "[END]", "error": str(exc)}))
+        emit_block("[END]", task="inference", error=str(exc))
         raise SystemExit(1)
