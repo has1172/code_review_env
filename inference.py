@@ -220,7 +220,6 @@ def run_episode(base_url: str, client: OpenAI | None, episode_num: int) -> dict:
 
             score = strict_task_score(result_obs.get("score", 0.0))
             feedback = result_obs.get("feedback", "")
-            cumulative = result_obs.get("cumulative_score", 0.0)
             done = result.get("done", False)
 
             episode_scores[f"task_{task_id}"] = score
@@ -233,7 +232,6 @@ def run_episode(base_url: str, client: OpenAI | None, episode_num: int) -> dict:
                 score=score,
                 reward=result.get("reward", 0.0),
                 done=done,
-                cumulative_score=cumulative,
             )
 
         except Exception as e:
@@ -252,6 +250,7 @@ def run_episode(base_url: str, client: OpenAI | None, episode_num: int) -> dict:
 
     total = sum(episode_scores.values())
     episode_scores["total"] = round(total, 3)
+    episode_scores["episode_score"] = strict_task_score(total / 3.0)
     episode_scores["percentage"] = f"{(total / 3.0) * 100:.1f}%"
 
     # [END] log — required format
@@ -261,9 +260,7 @@ def run_episode(base_url: str, client: OpenAI | None, episode_num: int) -> dict:
         task_1=episode_scores.get("task_1", 0.0),
         task_2=episode_scores.get("task_2", 0.0),
         task_3=episode_scores.get("task_3", 0.0),
-        score=episode_scores["total"],
-        max_possible=3.0,
-        percentage=episode_scores["percentage"],
+        score=episode_scores["episode_score"],
         steps=3,
     )
 
@@ -309,6 +306,7 @@ def main() -> int:
     avg_t2 = sum(s.get("task_2", 0) for s in all_scores) / len(all_scores)
     avg_t3 = sum(s.get("task_3", 0) for s in all_scores) / len(all_scores)
     avg_total = sum(s.get("total", 0) for s in all_scores) / len(all_scores)
+    avg_episode_score = strict_task_score(avg_total / 3.0)
 
     results = {
         "model": MODEL_NAME,
@@ -325,7 +323,7 @@ def main() -> int:
     }
 
     # Final [END] summary log
-    emit_block("[END]", task="inference", score=round(avg_total, 3), steps=args.episodes, summary=results)
+    emit_block("[END]", task="inference", score=avg_episode_score, steps=args.episodes)
 
     with open("inference_results.json", "w") as f:
         json.dump(results, f, indent=2)
