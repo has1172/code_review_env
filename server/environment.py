@@ -203,70 +203,75 @@ def normalize_task_score(score: float) -> float:
 # ─────────────────────────────────────────────────────────────────
 def grade_task1(action: CodeReviewAction, snippet: dict) -> tuple:
     if action.bug_detected is None:
-        return normalize_task_score(0.0), "No answer provided. Set bug_detected to True or False."
+        return 0.05, "No answer provided. Set bug_detected to True or False."
     correct = action.bug_detected == snippet["has_bug"]
     if correct:
-        return normalize_task_score(1.0), f"Correct! The code {'does' if snippet['has_bug'] else 'does not'} have a bug."
+        return 0.99, f"Correct! The code {'does' if snippet['has_bug'] else 'does not'} have a bug."
     else:
-        return normalize_task_score(0.0), f"Incorrect. The code {'does' if snippet['has_bug'] else 'does not'} have a bug."
+        return 0.01, f"Incorrect. The code {'does' if snippet['has_bug'] else 'does not'} have a bug."
 
 
 def grade_task2(action: CodeReviewAction, snippet: dict) -> tuple:
     if action.bug_type is None:
-        return normalize_task_score(0.0), "No bug_type provided. Choose from: syntax, logic, security, performance."
+        return 0.05, "No bug_type provided. Choose from: syntax, logic, security, performance."
 
     submitted_type = action.bug_type.lower().strip()
     if submitted_type not in VALID_BUG_TYPES:
-        return normalize_task_score(0.0), f"'{submitted_type}' is not a valid bug type."
+        return 0.05, f"'{submitted_type}' is not a valid bug type."
 
     score = 0.0
     feedback_parts = []
 
     if submitted_type == snippet["bug_type"]:
-        score += 0.7
+        score += 0.65
         feedback_parts.append(f"Correct bug type: '{submitted_type}'.")
     else:
-        score += 0.2
+        score += 0.15
         feedback_parts.append(f"Wrong bug type. You said '{submitted_type}', expected '{snippet['bug_type']}'.")
 
     if action.bug_line is not None:
         if action.bug_line == snippet["bug_line"]:
-            score += 0.3
+            score += 0.25
             feedback_parts.append(f"Correct bug line: {action.bug_line}.")
         else:
+            score += 0.05
             feedback_parts.append(f"Wrong line. You said line {action.bug_line}, bug is on line {snippet['bug_line']}.")
+    else:
+        score += 0.05
 
-    return normalize_task_score(score), " ".join(feedback_parts)
+    # Ensure strictly between 0 and 1
+    score = round(min(max(score, 0.01), 0.99), 2)
+    return score, " ".join(feedback_parts)
 
 
 def grade_task3(action: CodeReviewAction, snippet: dict) -> tuple:
     if not action.fixed_code or not action.fixed_code.strip():
-        return normalize_task_score(0.0), "No fix provided. Populate the fixed_code field."
+        return 0.01, "No fix provided. Populate the fixed_code field."
 
     submitted = action.fixed_code.strip()
     original = snippet["code"].strip()
     expected = snippet["fixed_code"].strip()
 
     if not is_valid_python(submitted):
-        return normalize_task_score(0.1), "Your fix is not valid Python (syntax error). Score: 0.1"
+        return 0.10, "Your fix is not valid Python (syntax error). Score: 0.10"
 
     if normalize_code(submitted) == normalize_code(original):
-        return normalize_task_score(0.3), "Your fix is identical to the original buggy code. Score: 0.3"
+        return 0.25, "Your fix is identical to the original buggy code. Score: 0.25"
 
     if normalize_code(submitted) == normalize_code(expected):
         bonus = " +bonus for explanation!" if action.explanation else ""
-        return normalize_task_score(1.0), f"Perfect fix!{bonus} Score: 1.0"
+        return 0.99, f"Perfect fix!{bonus} Score: 0.99"
 
     expected_tokens = set(normalize_code(expected).split())
     submitted_tokens = set(normalize_code(submitted).split())
     overlap = len(expected_tokens & submitted_tokens) / max(len(expected_tokens), 1)
 
     if overlap >= 0.8:
-        return normalize_task_score(0.8), f"Very close fix! {int(overlap*100)}% match. Score: 0.8"
+        return 0.79, f"Very close fix! {int(overlap*100)}% match. Score: 0.79"
     elif overlap >= 0.5:
-        return normalize_task_score(0.6), f"Partial fix. {int(overlap*100)}% match. Score: 0.6"
+        return 0.55, f"Partial fix. {int(overlap*100)}% match. Score: 0.55"
     else:
-        return normalize_task_score(0.4), f"Fix applied but mostly incorrect. {int(overlap*100)}% match. Score: 0.4"
+        return 0.35, f"Fix applied but mostly incorrect. {int(overlap*100)}% match. Score: 0.35"
 
 
 # ─────────────────────────────────────────────────────────────────
