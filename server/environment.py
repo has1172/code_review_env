@@ -156,6 +156,8 @@ SNIPPETS = [
 ]
 
 VALID_BUG_TYPES = {"syntax", "logic", "security", "performance"}
+MIN_TASK_SCORE = 0.01
+MAX_TASK_SCORE = 0.99
 
 TASK_DESCRIPTIONS = {
     1: (
@@ -192,26 +194,30 @@ def normalize_code(code: str) -> str:
     return " ".join(code.strip().lower().split())
 
 
+def normalize_task_score(score: float) -> float:
+    return round(min(max(score, MIN_TASK_SCORE), MAX_TASK_SCORE), 2)
+
+
 # ─────────────────────────────────────────────────────────────────
 # GRADERS
 # ─────────────────────────────────────────────────────────────────
 def grade_task1(action: CodeReviewAction, snippet: dict) -> tuple:
     if action.bug_detected is None:
-        return 0.0, "No answer provided. Set bug_detected to True or False."
+        return normalize_task_score(0.0), "No answer provided. Set bug_detected to True or False."
     correct = action.bug_detected == snippet["has_bug"]
     if correct:
-        return 1.0, f"Correct! The code {'does' if snippet['has_bug'] else 'does not'} have a bug."
+        return normalize_task_score(1.0), f"Correct! The code {'does' if snippet['has_bug'] else 'does not'} have a bug."
     else:
-        return 0.0, f"Incorrect. The code {'does' if snippet['has_bug'] else 'does not'} have a bug."
+        return normalize_task_score(0.0), f"Incorrect. The code {'does' if snippet['has_bug'] else 'does not'} have a bug."
 
 
 def grade_task2(action: CodeReviewAction, snippet: dict) -> tuple:
     if action.bug_type is None:
-        return 0.0, "No bug_type provided. Choose from: syntax, logic, security, performance."
+        return normalize_task_score(0.0), "No bug_type provided. Choose from: syntax, logic, security, performance."
 
     submitted_type = action.bug_type.lower().strip()
     if submitted_type not in VALID_BUG_TYPES:
-        return 0.0, f"'{submitted_type}' is not a valid bug type."
+        return normalize_task_score(0.0), f"'{submitted_type}' is not a valid bug type."
 
     score = 0.0
     feedback_parts = []
@@ -230,37 +236,37 @@ def grade_task2(action: CodeReviewAction, snippet: dict) -> tuple:
         else:
             feedback_parts.append(f"Wrong line. You said line {action.bug_line}, bug is on line {snippet['bug_line']}.")
 
-    return round(min(score, 1.0), 2), " ".join(feedback_parts)
+    return normalize_task_score(score), " ".join(feedback_parts)
 
 
 def grade_task3(action: CodeReviewAction, snippet: dict) -> tuple:
     if not action.fixed_code or not action.fixed_code.strip():
-        return 0.0, "No fix provided. Populate the fixed_code field."
+        return normalize_task_score(0.0), "No fix provided. Populate the fixed_code field."
 
     submitted = action.fixed_code.strip()
     original = snippet["code"].strip()
     expected = snippet["fixed_code"].strip()
 
     if not is_valid_python(submitted):
-        return 0.1, "Your fix is not valid Python (syntax error). Score: 0.1"
+        return normalize_task_score(0.1), "Your fix is not valid Python (syntax error). Score: 0.1"
 
     if normalize_code(submitted) == normalize_code(original):
-        return 0.3, "Your fix is identical to the original buggy code. Score: 0.3"
+        return normalize_task_score(0.3), "Your fix is identical to the original buggy code. Score: 0.3"
 
     if normalize_code(submitted) == normalize_code(expected):
         bonus = " +bonus for explanation!" if action.explanation else ""
-        return 1.0, f"Perfect fix!{bonus} Score: 1.0"
+        return normalize_task_score(1.0), f"Perfect fix!{bonus} Score: 1.0"
 
     expected_tokens = set(normalize_code(expected).split())
     submitted_tokens = set(normalize_code(submitted).split())
     overlap = len(expected_tokens & submitted_tokens) / max(len(expected_tokens), 1)
 
     if overlap >= 0.8:
-        return 0.8, f"Very close fix! {int(overlap*100)}% match. Score: 0.8"
+        return normalize_task_score(0.8), f"Very close fix! {int(overlap*100)}% match. Score: 0.8"
     elif overlap >= 0.5:
-        return 0.6, f"Partial fix. {int(overlap*100)}% match. Score: 0.6"
+        return normalize_task_score(0.6), f"Partial fix. {int(overlap*100)}% match. Score: 0.6"
     else:
-        return 0.4, f"Fix applied but mostly incorrect. {int(overlap*100)}% match. Score: 0.4"
+        return normalize_task_score(0.4), f"Fix applied but mostly incorrect. {int(overlap*100)}% match. Score: 0.4"
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -317,7 +323,9 @@ class CodeReviewEnvironment(Environment):
         elif task_id == 3:
             score, feedback = grade_task3(action, self._snippet)
         else:
-            score, feedback = 0.0, f"Invalid task_id: {task_id}. Must be 1, 2, or 3."
+            score, feedback = normalize_task_score(0.0), f"Invalid task_id: {task_id}. Must be 1, 2, or 3."
+
+        score = normalize_task_score(score)
 
         self._state.task_scores[task_id] = score
         if task_id not in self._state.tasks_completed:

@@ -31,6 +31,8 @@ MAX_STEPS = 3
 TEMPERATURE = 0.0
 MAX_TOKENS = 500
 DEFAULT_URL = "http://localhost:7860"
+MIN_TASK_SCORE = 0.01
+MAX_TASK_SCORE = 0.99
 
 SYSTEM_PROMPT = """You are an expert Python code reviewer.
 You will be given a code snippet and a task to perform.
@@ -132,6 +134,10 @@ def emit_block(tag: str, **fields: object) -> None:
     print(" ".join(parts), flush=True)
 
 
+def strict_task_score(score: float) -> float:
+    return round(min(max(float(score), MIN_TASK_SCORE), MAX_TASK_SCORE), 2)
+
+
 # ─────────────────────────────────────────────────────────────────
 # LLM AGENT
 # ─────────────────────────────────────────────────────────────────
@@ -212,7 +218,7 @@ def run_episode(base_url: str, client: OpenAI | None, episode_num: int) -> dict:
             result = step_episode(base_url, action)
             result_obs = result.get("observation", result)
 
-            score = result_obs.get("score", 0.0)
+            score = strict_task_score(result_obs.get("score", 0.0))
             feedback = result_obs.get("feedback", "")
             cumulative = result_obs.get("cumulative_score", 0.0)
             done = result.get("done", False)
@@ -232,13 +238,13 @@ def run_episode(base_url: str, client: OpenAI | None, episode_num: int) -> dict:
 
         except Exception as e:
             print(f"[WARN] Error on task {task_id}: {e}")
-            episode_scores[f"task_{task_id}"] = 0.0
+            episode_scores[f"task_{task_id}"] = MIN_TASK_SCORE
 
             emit_block(
                 "[STEP]",
                 episode=episode_num,
                 task_id=task_id,
-                score=0.0,
+                score=MIN_TASK_SCORE,
                 reward=0.0,
                 done=False,
                 error=str(e),
