@@ -20,15 +20,16 @@ import argparse
 import requests
 from openai import OpenAI
 
+# ─────────────────────────────────────────────────────────────────
 # CONFIG — reads from environment variables (mandatory)
+# ─────────────────────────────────────────────────────────────────
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.3-70B-Instruct")
 
-MAX_STEPS = 3        # One step per task
-TEMPERATURE = 0.0    # Deterministic for reproducibility
+MAX_STEPS = 3
+TEMPERATURE = 0.0
 MAX_TOKENS = 500
-
 DEFAULT_URL = "http://localhost:8000"
 
 SYSTEM_PROMPT = """You are an expert Python code reviewer.
@@ -46,8 +47,16 @@ For Task 3 (Bug Fix):
 
 Respond ONLY with the JSON object. No extra text. No markdown."""
 
+TASK_DESCRIPTIONS = {
+    1: "Task 1 — Bug Detection: Does this code contain a bug? Set bug_detected=true if yes, false if no.",
+    2: "Task 2 — Bug Classification: What type of bug? Set bug_type to one of: syntax, logic, security, performance. Also set bug_line.",
+    3: "Task 3 — Bug Fix: Provide the complete corrected version of the code in fixed_code. Add explanation.",
+}
 
+
+# ─────────────────────────────────────────────────────────────────
 # ENVIRONMENT HELPERS
+# ─────────────────────────────────────────────────────────────────
 def reset_episode(base_url: str) -> dict:
     response = requests.post(
         f"{base_url}/reset",
@@ -62,7 +71,7 @@ def reset_episode(base_url: str) -> dict:
 def step_episode(base_url: str, action: dict) -> dict:
     response = requests.post(
         f"{base_url}/step",
-        json=action,
+        json={"action": action},
         headers={"Content-Type": "application/json"},
         timeout=30,
     )
@@ -78,10 +87,10 @@ def check_health(base_url: str) -> bool:
         return False
 
 
+# ─────────────────────────────────────────────────────────────────
 # LLM AGENT
+# ─────────────────────────────────────────────────────────────────
 def call_llm(client: OpenAI, code_snippet: str, task_id: int, task_description: str) -> dict:
-    """Call LLM and return parsed JSON action."""
-
     user_prompt = f"""Code to review:
 ```python
 {code_snippet}
@@ -102,26 +111,21 @@ Respond with ONLY the JSON action object."""
             max_tokens=MAX_TOKENS,
             stream=False,
         )
-
         response_text = completion.choices[0].message.content or ""
-
-        # Clean markdown fences if present
         response_text = re.sub(r"```json|```", "", response_text).strip()
-
         return json.loads(response_text)
 
     except json.JSONDecodeError:
-        # Fallback actions if JSON parsing fails
+        print(f"[WARN] JSON parse failed for task {task_id}, using fallback")
         fallbacks = {
             1: {"task_id": 1, "bug_detected": True},
             2: {"task_id": 2, "bug_type": "logic", "bug_line": 1},
             3: {"task_id": 3, "fixed_code": code_snippet, "explanation": "No fix found"},
         }
-        print(f"  Warning: JSON parse failed for task {task_id}, using fallback")
         return fallbacks[task_id]
 
     except Exception as exc:
-        print(f"  Warning: LLM call failed ({exc}), using fallback")
+        print(f"[WARN] LLM call failed ({exc}), using fallback")
         fallbacks = {
             1: {"task_id": 1, "bug_detected": True},
             2: {"task_id": 2, "bug_type": "logic", "bug_line": 1},
@@ -130,32 +134,10 @@ Respond with ONLY the JSON action object."""
         return fallbacks[task_id]
 
 
-# TASK DESCRIPTIONS
-TASK_DESCRIPTIONS = {
-    1: (
-        "Task 1 — Bug Detection: "
-        "Does this code contain a bug? "
-        "Set bug_detected=true if yes, false if no."
-    ),
-    2: (
-        "Task 2 — Bug Classification: "
-        "What type of bug is present? "
-        "Set bug_type to one of: syntax, logic, security, performance. "
-        "Also set bug_line to the line number where the bug is."
-    ),
-    3: (
-        "Task 3 — Bug Fix: "
-        "Provide the complete corrected version of the code in fixed_code. "
-        "Add a brief explanation of your fix in explanation."
-    ),
-}
-
-
+# ─────────────────────────────────────────────────────────────────
 # RUN ONE EPISODE
+# ─────────────────────────────────────────────────────────────────
 def run_episode(base_url: str, client: OpenAI, episode_num: int) -> dict:
-    print(f"\n{'='*55}")
-    print(f"Episode {episode_num}")
-    print('='*55)
 
     # Reset environment
     obs_response = reset_episode(base_url)
@@ -163,68 +145,98 @@ def run_episode(base_url: str, client: OpenAI, episode_num: int) -> dict:
     code_snippet = observation.get("code_snippet", "")
     hint = observation.get("hint", "")
 
-    print(f"Code snippet:\n{code_snippet}")
-    print(f"Hint: {hint}\n")
+    # [START] log — required format
+    print(json.dumps({
+        "type": "[START]",
+        "episode": episode_num,
+        "code_snippet": code_snippet,
+        "hint": hint,
+        "model": MODEL_NAME,
+        "environment_url": base_url,
+    }))
 
     episode_scores = {}
 
-    # Run all 3 tasks sequentially
     for task_id in [1, 2, 3]:
-        print(f"\n--- Task {task_id} ---")
-
         try:
-            # Get LLM action
             action = call_llm(
                 client=client,
                 code_snippet=code_snippet,
                 task_id=task_id,
                 task_description=TASK_DESCRIPTIONS[task_id],
             )
-            print(f"Agent action: {json.dumps(action)}")
 
-            # Submit to environment
             result = step_episode(base_url, action)
             result_obs = result.get("observation", result)
 
             score = result_obs.get("score", 0.0)
             feedback = result_obs.get("feedback", "")
             cumulative = result_obs.get("cumulative_score", 0.0)
+            done = result.get("done", False)
 
             episode_scores[f"task_{task_id}"] = score
-            print(f"Score: {score} | Feedback: {feedback}")
-            print(f"Cumulative score: {cumulative}")
+
+            # [STEP] log — required format
+            print(json.dumps({
+                "type": "[STEP]",
+                "episode": episode_num,
+                "task_id": task_id,
+                "action": action,
+                "score": score,
+                "feedback": feedback,
+                "cumulative_score": cumulative,
+                "done": done,
+                "reward": result.get("reward", 0.0),
+            }))
 
         except Exception as e:
-            print(f"Error on task {task_id}: {e}")
+            print(f"[WARN] Error on task {task_id}: {e}")
             episode_scores[f"task_{task_id}"] = 0.0
+
+            print(json.dumps({
+                "type": "[STEP]",
+                "episode": episode_num,
+                "task_id": task_id,
+                "action": {},
+                "score": 0.0,
+                "feedback": f"Error: {str(e)}",
+                "cumulative_score": 0.0,
+                "done": False,
+                "reward": 0.0,
+            }))
 
     total = sum(episode_scores.values())
     episode_scores["total"] = round(total, 3)
     episode_scores["percentage"] = f"{(total / 3.0) * 100:.1f}%"
 
-    print(f"\nEpisode {episode_num} result: {total:.3f} / 3.0 ({episode_scores['percentage']})")
+    # [END] log — required format
+    print(json.dumps({
+        "type": "[END]",
+        "episode": episode_num,
+        "scores": {
+            "task_1": episode_scores.get("task_1", 0.0),
+            "task_2": episode_scores.get("task_2", 0.0),
+            "task_3": episode_scores.get("task_3", 0.0),
+            "total": episode_scores["total"],
+            "max_possible": 3.0,
+            "percentage": episode_scores["percentage"],
+        }
+    }))
+
     return episode_scores
 
 
+# ─────────────────────────────────────────────────────────────────
 # MAIN
+# ─────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(
         description="Inference script for Code Review RL Environment"
     )
-    parser.add_argument(
-        "--url",
-        default=DEFAULT_URL,
-        help="Base URL of the environment server"
-    )
-    parser.add_argument(
-        "--episodes",
-        type=int,
-        default=3,
-        help="Number of episodes to run"
-    )
+    parser.add_argument("--url", default=DEFAULT_URL, help="Base URL of environment server")
+    parser.add_argument("--episodes", type=int, default=3, help="Number of episodes to run")
     args = parser.parse_args()
 
-    # Validate environment variables
     if not API_KEY:
         raise ValueError(
             "HF_TOKEN environment variable not set!\n"
@@ -233,38 +245,24 @@ def main():
             "  Mac/Linux: export HF_TOKEN=your_token_here"
         )
 
-    print(f"{'='*55}")
-    print(f"Code Review Environment — Inference Script")
-    print(f"{'='*55}")
-    print(f"Server URL : {args.url}")
-    print(f"Model      : {MODEL_NAME}")
-    print(f"API Base   : {API_BASE_URL}")
-    print(f"Episodes   : {args.episodes}")
+    print(json.dumps({
+        "type": "[START]",
+        "script": "Code Review Environment — Inference Script",
+        "server_url": args.url,
+        "model": MODEL_NAME,
+        "api_base_url": API_BASE_URL,
+        "episodes": args.episodes,
+    }))
 
-    # Health check
     if not check_health(args.url):
-        raise ConnectionError(
-            f"Cannot reach server at {args.url}\n"
-            "Make sure the server is running first!"
-        )
-    print(f"Server     : healthy ✓\n")
+        raise ConnectionError(f"Cannot reach server at {args.url}")
 
-    # Initialize OpenAI client pointing to HF router
-    client = OpenAI(
-        base_url=API_BASE_URL,
-        api_key=API_KEY,
-    )
+    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
-    # Run episodes
     all_scores = []
     for i in range(1, args.episodes + 1):
         scores = run_episode(args.url, client, i)
         all_scores.append(scores)
-
-    # Calculate averages
-    print(f"\n{'='*55}")
-    print("FINAL BASELINE RESULTS")
-    print('='*55)
 
     avg_t1 = sum(s.get("task_1", 0) for s in all_scores) / len(all_scores)
     avg_t2 = sum(s.get("task_2", 0) for s in all_scores) / len(all_scores)
@@ -285,12 +283,12 @@ def main():
         },
     }
 
-    print(json.dumps(results, indent=2))
+    # Final [END] summary log
+    print(json.dumps({"type": "[END]", "summary": results}))
 
-    # Save results
     with open("inference_results.json", "w") as f:
         json.dump(results, f, indent=2)
-    print("\nResults saved to inference_results.json ✓")
+    print(json.dumps({"type": "[END]", "message": "Results saved to inference_results.json"}))
 
 
 if __name__ == "__main__":
