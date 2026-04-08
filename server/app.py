@@ -3,7 +3,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 from environment import CodeReviewEnvironment
@@ -43,6 +43,27 @@ class StepRequest(BaseModel):
 @app.get("/health")
 def health():
     return JSONResponse({"status": "healthy"})
+
+
+@app.get("/")
+def index():
+        """Simple root page so the Spaces App tab shows content instead of 404.
+
+        The API is primarily JSON-based; provide a small HTML landing page
+        with a link to the automatic OpenAPI docs at `/docs`.
+        """
+        html = """
+        <html>
+            <head><title>Code Review Environment API</title></head>
+            <body style="font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial;line-height:1.6;">
+                <h2>Code Review Environment (API)</h2>
+                <p>This Space exposes a FastAPI app. Use the <a href="/docs">OpenAPI docs</a>
+                     or POST to <code>/reset</code> to start an episode.</p>
+                <p>Example: <code>curl -X POST -H 'Content-Type: application/json' {"{your_space_url}"}/reset -d '{}' </code></p>
+            </body>
+        </html>
+        """
+        return HTMLResponse(html)
 
 
 # ─────────────────────────────────────────────────────────────────
